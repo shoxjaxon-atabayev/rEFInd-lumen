@@ -355,4 +355,3 @@ Lumen is licensed under the MIT License.
 Copyright (c) 2026 Shoxjahon Atabayev.
 
 Third-party asset attribution: see [NOTICE](NOTICE).
-# refind-lumin
