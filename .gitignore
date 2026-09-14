@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+
+# Generator scratch / backups
+*.backup-*
+*.previous/
+
+# Local colour builds (tools/generate.py's default --out-dir) — never
+# committed; colour variants are generated on demand, not shipped.
+/build/
+
+# One-off upscaling benchmark
+.upscale-benchmark/
+
+# OS / editor
+.DS_Store
+*.swp
+*~
