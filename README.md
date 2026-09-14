@@ -352,6 +352,6 @@ include themes/lumen/theme.conf
 
 Lumen is licensed under the MIT License.
 
-Copyright (c) 2026 Shoxjahon Atabayev.
+Copyright (c) 2026 Shoxjaxon Atabayev.
 
 Third-party asset attribution: see [NOTICE](NOTICE).
