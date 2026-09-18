@@ -988,13 +988,21 @@ def make_preview(variants: list[str]) -> None:
             cx = pad + (i % cols) * (cell + pad)
             cy = y_off + 24 + pad + (i // cols) * (row_h + pad)
             tile = _cell(BACKGROUNDS[bg], tile_dim)
-            sel_b = as_refind(Image.open(look_dir(v, bg) / "selection_big.png").convert("RGBA"), 200, sel_cell)
+            # refind_px for the backdrops is the *inflated* TILE_RATIO size
+            # rEFInd actually renders them at ((200*9)//8, (50*4)//3 — same
+            # numbers as make_menu_preview), not the plain icon size: only
+            # the backdrop gets that extra re-inflation, so simulating its
+            # bilinear downscale at the icon's own resolution would slightly
+            # under-blur it relative to real hardware.
+            sel_b = as_refind(Image.open(look_dir(v, bg) / "selection_big.png").convert("RGBA"),
+                               (200 * 9) // 8, sel_cell)
             icon_b = as_refind(look_icon(v, bg, "os_arch.png"), 200, cell)
             tile.alpha_composite(sel_b, centered(off, off, cell, sel_cell))
             tile.alpha_composite(icon_b, (off, off))
             # Tool-icon chip in the top-right corner (was bottom-right).
             ox, oy = off + cell - chip - 6, off + 6
-            sel_s = as_refind(Image.open(look_dir(v, bg) / "selection_small.png").convert("RGBA"), 50, sel_chip)
+            sel_s = as_refind(Image.open(look_dir(v, bg) / "selection_small.png").convert("RGBA"),
+                               (50 * 4) // 3, sel_chip)
             icon_s = as_refind(look_icon(v, bg, "func_shutdown.png"), 50, chip)
             tile.alpha_composite(sel_s, centered(ox, oy, chip, sel_chip))
             tile.alpha_composite(icon_s, (ox, oy))
