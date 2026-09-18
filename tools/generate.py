@@ -170,8 +170,12 @@ WHITE_ON_LIGHT = "#2B2B2D"   # the "white" variant's ink on the light background
 
 # Every icon is re-padded so its content fills this fraction of its canvas —
 # evens out the ~0.5-0.62 the source icons vary between and, with a large
-# big_icon_size in theme.conf, gives big icons AND wide, even gaps.
-ICON_CONTENT = 0.58
+# big_icon_size in theme.conf, gives big icons AND wide, even gaps. Sized well
+# below the card's own footprint (see CARD_SPECS) so the logo reads as
+# sitting inside the card with visible breathing room, not crowding its
+# border — shrinking this does NOT change the card's own size at all, only
+# how much of it the logo fills.
+ICON_CONTENT = 0.48
 
 # Master resolution multiplier. The OS icons in icons/ are 4x hi-res masters
 # (Real-ESRGAN x4plus upscales of the originals), so every big asset is
@@ -243,6 +247,26 @@ SPECS = {
     "small": dict(px=64 * SCALE, shape="circle",
                   **shrink_spec(64 * SCALE, 9.0 * SCALE, 4.5 * SCALE, 2.3 * SCALE,
                                  TILE_RATIO["small"])),
+}
+
+# The faint card border baked directly into every icon (render_card_border)
+# must NOT use SPECS' shrunk geometry: that shrink exists only to pre-cancel
+# rEFInd's own TILE_RATIO re-inflation of the SEPARATELY-scaled selection
+# backdrop (render_outline / selection_big.png), so the backdrop's glow lands
+# back on the as-designed perimeter after boot scales it up by 9/8 or 4/3.
+# The icon itself never gets that extra re-inflation — it's blitted straight
+# at big_icon_size/small_icon_size — so baking the SHRUNK ring onto it left
+# the card's own border sitting visibly inside where the (correctly
+# re-inflated) backdrop's lit corners land: a gap between the two on real
+# hardware. CARD_SPECS keeps the original, as-designed margin/radius/border
+# (pre shrink_spec) so the card renders at the same perimeter the backdrop
+# re-inflates back to — the two now trace the same on-screen ring with no
+# padding between them.
+CARD_SPECS = {
+    "big":   dict(px=SPECS["big"]["px"], shape=SPECS["big"]["shape"],
+                  margin=34.0 * SCALE, radius=18.0 * SCALE, border=3.4 * SCALE),
+    "small": dict(px=SPECS["small"]["px"], shape=SPECS["small"]["shape"],
+                  margin=9.0 * SCALE, radius=4.5 * SCALE, border=2.3 * SCALE),
 }
 SS = 4  # supersample factor
 # Cap the outline supersample buffer: at SCALE 4 the square outline is 1024 px
@@ -464,13 +488,15 @@ def lut_sample(lut: np.ndarray, phase: np.ndarray) -> np.ndarray:
 
 # ---------------------------------------------------------------- outline --
 
-def ring_geometry(kind: str):
+def ring_geometry(kind: str, specs: dict = SPECS):
     """The card's own ring band (and its filled interior) for a SPECS kind
     (rounded square for "big", circle for "small" — see shape_sdf), at its
     own supersampled resolution — shared by the vivid focused ring
-    (render_outline) and the faint default card (render_card_border) baked
-    into every icon, so both always trace the exact same shape."""
-    spec = SPECS[kind]
+    (render_outline, always SPECS) and the faint default card
+    (render_card_border, CARD_SPECS — see its own comment above) baked into
+    every icon. Both trace the exact same shape family at the same canvas
+    size, just at each geometry's own (possibly TILE_RATIO-shrunk) margin."""
+    spec = specs[kind]
     size = spec["px"]
     ss = SS if size * SS <= MAX_OUTLINE_RES else MAX_OUTLINE_RES / size
     hi = int(round(size * ss))
@@ -679,7 +705,7 @@ def render_card_border(kind: str, bg: str) -> Image.Image:
     themselves use, with no colour cycling and no glow. `np.maximum` rather
     than adding the two keeps the border the brighter rim it should be
     instead of double-counting where it overlaps the fill."""
-    _spec, ring, fill, _d_out, _px, _py, _xs, _ys, _hi, size, _ss = ring_geometry(kind)
+    _spec, ring, fill, _d_out, _px, _py, _xs, _ys, _hi, size, _ss = ring_geometry(kind, CARD_SPECS)
     alpha = np.maximum(downscale(fill, size) * CARD_FILL_ALPHA,
                         downscale(ring, size) * CARD_BORDER_ALPHA)
     _, col = paint("white", bg)
@@ -914,15 +940,30 @@ def _cell(bg_hex: str, size: int, *layers: Image.Image) -> Image.Image:
     return tile
 
 
+def as_refind(img: Image.Image, refind_px: int, draw_px: int) -> Image.Image:
+    """rEFInd downscales the shipped icon/backdrop to *_icon_size (or the
+    TILE_RATIO-bigger backdrop size) with a plain filter; mimic that so a
+    preview shows the real on-screen sharpness rather than a clean LANCZOS
+    downscale straight from the 4x master."""
+    return img.resize((refind_px, refind_px), Image.BILINEAR).resize((draw_px, draw_px), Image.LANCZOS)
+
+
+def centered(x: int, y: int, ref_size: int, draw_size: int) -> tuple[int, int]:
+    """Top-left for a draw_size box sharing a centre with a ref_size box
+    whose own top-left is (x, y) — how rEFInd centres the (smaller) icon
+    inside the (bigger) selection backdrop's tile box."""
+    off = (draw_size - ref_size) // 2
+    return x - off, y - off
+
+
 def make_preview(variants: list[str]) -> None:
-    """A quick hue/palette comparison sheet — NOT a hardware-accurate
-    simulation. It draws the selection image and the icon at the same size,
-    which is wrong twice over: real rEFInd draws the selection backdrop
-    bigger than the icon (see TILE_RATIO), and SPECS is pre-shrunk to
-    compensate for that on real hardware. So the card/glow always looks
-    smaller and tighter here than it actually renders — use
-    make_menu_preview()'s output (or an actual install) to judge card size
-    or glow length; this one's only for comparing hues at a glance."""
+    """A quick hue/palette comparison sheet. Uses the same TILE_RATIO-aware
+    compositing as make_menu_preview (as_refind/centered) so the selection
+    backdrop lands in the same relative position here as it does on real
+    hardware — drawing backdrop and icon at the same size (the old
+    behaviour) nested the (still-shrunk) backdrop visibly INSIDE the icon's
+    own card border instead of tracing it, since only the backdrop gets
+    TILE_RATIO's extra re-inflation at boot."""
     if not (ICONS_DIR / "os_arch.png").exists():
         print("  (skipping preview: no icons)")
         return
@@ -930,7 +971,11 @@ def make_preview(variants: list[str]) -> None:
     chip = 84
     label_h = 26
     font = ImageFont.load_default(size=17)
-    row_h = cell + label_h  # each cell plus its name label strip below it
+    sel_cell = round(cell * TILE_RATIO["big"])
+    sel_chip = round(chip * TILE_RATIO["small"])
+    tile_dim = sel_cell             # canvas big enough to hold the larger backdrop without clipping
+    off = (tile_dim - cell) // 2    # the icon's own inset within that canvas, sharing a centre with the backdrop
+    row_h = cell + off + label_h    # extra `off` headroom so the backdrop's own lower-right glow can't bleed onto the label below it
     rows_per_bg = (len(variants) + cols - 1) // cols
     W = cols * cell + (cols + 1) * pad
     H = 2 * rows_per_bg * row_h + (2 * rows_per_bg + 2) * pad + 40
@@ -942,19 +987,21 @@ def make_preview(variants: list[str]) -> None:
         for i, v in enumerate(variants):
             cx = pad + (i % cols) * (cell + pad)
             cy = y_off + 24 + pad + (i // cols) * (row_h + pad)
-            big = look_dir(v, bg) / "selection_big.png"
-            small = look_dir(v, bg) / "selection_small.png"
-            tile = _cell(BACKGROUNDS[bg], cell,
-                         Image.open(big).convert("RGBA").resize((cell, cell), Image.LANCZOS),
-                         look_icon(v, bg, "os_arch.png").resize((cell, cell), Image.LANCZOS))
+            tile = _cell(BACKGROUNDS[bg], tile_dim)
+            sel_b = as_refind(Image.open(look_dir(v, bg) / "selection_big.png").convert("RGBA"), 200, sel_cell)
+            icon_b = as_refind(look_icon(v, bg, "os_arch.png"), 200, cell)
+            tile.alpha_composite(sel_b, centered(off, off, cell, sel_cell))
+            tile.alpha_composite(icon_b, (off, off))
             # Tool-icon chip in the top-right corner (was bottom-right).
-            ox, oy = cell - chip - 6, 6
-            tile.alpha_composite(Image.open(small).convert("RGBA").resize((chip, chip), Image.LANCZOS), (ox, oy))
-            tile.alpha_composite(look_icon(v, bg, "func_shutdown.png").resize((chip, chip), Image.LANCZOS), (ox, oy))
-            sheet.paste(tile.convert("RGB"), (cx, cy))
+            ox, oy = off + cell - chip - 6, off + 6
+            sel_s = as_refind(Image.open(look_dir(v, bg) / "selection_small.png").convert("RGBA"), 50, sel_chip)
+            icon_s = as_refind(look_icon(v, bg, "func_shutdown.png"), 50, chip)
+            tile.alpha_composite(sel_s, centered(ox, oy, chip, sel_chip))
+            tile.alpha_composite(icon_s, (ox, oy))
+            sheet.paste(tile.convert("RGB"), (cx - off, cy - off))
             bbox = draw.textbbox((0, 0), v, font=font)
             tw = bbox[2] - bbox[0]
-            draw.text((cx + (cell - tw) // 2, cy + cell + (label_h - (bbox[3] - bbox[1])) // 2),
+            draw.text((cx + (cell - tw) // 2, cy + cell + off + (label_h - (bbox[3] - bbox[1])) // 2),
                        v, font=font, fill=(200, 200, 206))
 
     dest = REPO / "preview.png"
@@ -984,18 +1031,6 @@ def make_menu_preview(variants: list[str]) -> None:
     sel_os, sel_tool = 1, 0      # you see comes from the icons' transparent pad
     combos = [(v, bg) for bg in ("dark", "light") for v in variants]
     panel = Image.new("RGB", (W, strip_h * len(combos)), (17, 17, 19))
-
-    def as_refind(img: Image.Image, refind_px: int, draw_px: int) -> Image.Image:
-        # rEFInd downscales the shipped icon to *_icon_size with a plain filter;
-        # mimic that so the preview shows the real on-screen sharpness.
-        return img.resize((refind_px, refind_px), Image.BILINEAR).resize((draw_px, draw_px), Image.LANCZOS)
-
-    def centered(x: int, y: int, ref_size: int, draw_size: int) -> tuple[int, int]:
-        """Top-left for a draw_size box sharing a centre with a ref_size box
-        whose own top-left is (x, y) — how rEFInd centres the (smaller) icon
-        inside the (bigger) selection backdrop's tile box."""
-        off = (draw_size - ref_size) // 2
-        return x - off, y - off
 
     for row, (v, bg) in enumerate(combos):
         rgb = tuple(int(round(c * 255)) for c in hex_rgb(BACKGROUNDS[bg]))
