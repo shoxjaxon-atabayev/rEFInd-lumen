@@ -92,6 +92,7 @@ for these before it runs this script).
 from __future__ import annotations
 
 import hashlib
+import hashlib as _hashlib
 import sys
 from pathlib import Path
 
@@ -102,6 +103,16 @@ REPO = Path(__file__).resolve().parent.parent
 COLORS_DIR = REPO / "build" / "colors"   # default; override with --out-dir=PATH
 ICONS_DIR = REPO / "icons"
 BG_DIR = REPO / "backgrounds"
+
+# Fingerprint of this script's own source, written into every generated
+# colour dir (see build()) and checked by install.sh's is_cached() before
+# reusing a cached build/colors/<colour> — otherwise a `build/colors` left
+# over from before some rendering fix (e.g. a card/frame geometry change)
+# reads as "already generated" forever by file-existence alone, so an
+# install would keep shipping the stale, pre-fix render until someone
+# thinks to `rm -rf build/colors` by hand. Any edit to this file changes the
+# hash and invalidates every colour's cache on the next generate/install.
+GENERATOR_FINGERPRINT = _hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 # ---------------------------------------------------------------- palette --
 
@@ -928,6 +939,7 @@ def build(variant: str) -> None:
             icon = recolor_icon(pic, variant, bg, name=name if big else None)
             icon = Image.alpha_composite(icon, card["big" if big else "small"])
             icon.save(d / "icons" / name, optimize=True)
+    (look_dir(variant, "dark") / ".fingerprint").write_text(GENERATOR_FINGERPRINT)
     print(f"  {variant:16s} -> {COLORS_DIR}/{variant}/  (+ light/)  {len(sources)} icons x2")
 
 
